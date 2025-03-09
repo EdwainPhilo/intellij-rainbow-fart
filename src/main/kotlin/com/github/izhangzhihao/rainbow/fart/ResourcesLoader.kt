@@ -50,6 +50,8 @@ class ResourcesLoader : StartupActivity {
         val mapper = JsonMapper.builder().addModule(KotlinModule(nullIsSameAsDefault = true)).build()
 
         mapper.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+        // Jackson 忽略未知属性，这样即使将来有其他未知字段也不会导致解析失败
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
         val manifest: Manifest = mapper.readValue(current)
 
@@ -150,8 +152,8 @@ data class Manifest(
     val locale: String = "zh",
     val contributes: List<Contribute>?
 )
-
-data class Contribute(val keywords: List<String>, val voices: List<String>)
+// 添加支持 texts 字段
+data class Contribute(val keywords: List<String>, val voices: List<String>, val texts: List<String> = emptyList())
 
 data class Contributes(val contributes: List<Contribute>)
 

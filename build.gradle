@@ -35,8 +35,11 @@ repositories {
 
 intellij {
     pluginName name
-
-    version ideaVersion
+    if (localIdea.toBoolean()) {
+        localPath ideaPath
+    } else {
+        version ideaVersion
+    }
     updateSinceUntilBuild = false
 }
 
