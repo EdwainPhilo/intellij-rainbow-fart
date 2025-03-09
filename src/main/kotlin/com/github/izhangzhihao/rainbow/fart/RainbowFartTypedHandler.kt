@@ -18,7 +18,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.io.File
-
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.Clip
+import javax.sound.sampled.DataLine
 
 class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedActionHandlerBase(originalHandler) {
 
@@ -79,16 +81,96 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
 
         private fun playVoice(voices: List<String>) {
             try {
-                val mp3Stream =
-                    if (RainbowFartSettings.instance.customVoicePackage != "") {
-                        resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voices.random()).inputStream()
-                    } else {
-                        FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/" + voices.random())
+                val voiceFile = voices.random()
+                // 使用try-catch处理可能的API不兼容问题
+                val fileExtension = try {
+                    // 尝试使用Kotlin 1.5+的API
+                    voiceFile.substringAfterLast('.', "").lowercase()
+                } catch (e: NoSuchMethodError) {
+                    // 回退到Kotlin 1.4的API
+                    voiceFile.substringAfterLast('.', "").toLowerCase()
+                }
+
+                // 添加wav和其他音频格式支持，如果Java Sound API不支持，则回退到MP3播放尝试
+                when (fileExtension) {
+                    "mp3" -> playMP3(voiceFile)
+                    "wav" -> playWAV(voiceFile)
+                    else -> {
+                        // 尝试使用Java Sound API播放其他格式
+                        playWithJavaSound(voiceFile)
                     }
-                val player = Player(mp3Stream)
-                player.play()
-                player.close()
+                }
             } catch (e: Throwable) {
+                // 记录错误但不中断用户体验
+                e.printStackTrace()
+            }
+        }
+
+        private fun playMP3(voiceFile: String) {
+            val mp3Stream =
+                if (RainbowFartSettings.instance.customVoicePackage != "") {
+                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile).inputStream()
+                } else {
+                    FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
+                }
+            val player = Player(mp3Stream)
+            player.play()
+            player.close()
+        }
+
+        private fun playWAV(voiceFile: String) {
+            val audioInputStream = if (RainbowFartSettings.instance.customVoicePackage != "") {
+                AudioSystem.getAudioInputStream(
+                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
+                )
+            } else {
+                AudioSystem.getAudioInputStream(
+                    FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
+                )
+            }
+
+            val clip = AudioSystem.getClip()
+            clip.open(audioInputStream)
+            clip.start()
+
+            // 等待播放完成
+            while (clip.isRunning) {
+                Thread.sleep(10)
+            }
+            clip.close()
+            audioInputStream.close()
+        }
+
+        private fun playWithJavaSound(voiceFile: String) {
+            try {
+                val audioInputStream = if (RainbowFartSettings.instance.customVoicePackage != "") {
+                    AudioSystem.getAudioInputStream(
+                        resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
+                    )
+                } else {
+                    AudioSystem.getAudioInputStream(
+                        FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
+                    )
+                }
+
+                val format = audioInputStream.format
+                val info = DataLine.Info(Clip::class.java, format)
+
+                if (AudioSystem.isLineSupported(info)) {
+                    val clip = AudioSystem.getLine(info) as Clip
+                    clip.open(audioInputStream)
+                    clip.start()
+
+                    // 等待播放完成
+                    while (clip.isRunning) {
+                        Thread.sleep(10)
+                    }
+                    clip.close()
+                }
+                audioInputStream.close()
+            } catch (e: Exception) {
+                // 如果Java Sound API不支持，回退到MP3播放尝试
+                playMP3(voiceFile)
             }
         }
 
