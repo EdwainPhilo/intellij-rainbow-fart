@@ -32,7 +32,14 @@ class ResourcesLoader : StartupActivity {
         val customVoicePackage = RainbowFartSettings.instance.customVoicePackage
         val current =
             if (customVoicePackage != "") {
-                resolvePath(customVoicePackage + File.separator + "manifest.json").readText()
+                val manifestFile = File(customVoicePackage + File.separator + "manifest.json")
+                if (manifestFile.exists()) {
+                    resolvePath(customVoicePackage + File.separator + "manifest.json").readText()
+                } else {
+                    // 如果没有manifest.json文件，尝试加载contributes.json
+                    // 这里不做文件是否存在判断，让插件报错从而让用户知道自定义语音包不成功
+                    resolvePath(customVoicePackage + File.separator + "contributes.json").readText
+                }
             } else {
                 ResourcesLoader::class.java.getResource("/build-in-voice-chinese/manifest.json").readText()
             }
