@@ -3,6 +3,7 @@ package com.github.izhangzhihao.rainbow.fart
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
+import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.github.izhangzhihao.rainbow.fart.BuildInContributes.buildInContributes
@@ -29,6 +30,7 @@ class ResourcesLoader : StartupActivity {
         } else {
             RainbowFartSettings.isAppliedApplicationLevel = true
         }
+        
         val customVoicePackage = RainbowFartSettings.instance.customVoicePackage
         val current =
             if (customVoicePackage != "") {
@@ -38,16 +40,27 @@ class ResourcesLoader : StartupActivity {
                 } else {
                     // 如果没有manifest.json文件，尝试加载contributes.json
                     // 这里不做文件是否存在判断，让插件报错从而让用户知道自定义语音包不成功
-                    resolvePath(customVoicePackage + File.separator + "contributes.json").readText
+                    resolvePath(customVoicePackage + File.separator + "contributes.json").readText()
                 }
             } else {
-                ResourcesLoader::class.java.getResource("/build-in-voice-chinese/manifest.json").readText()
+                // 添加非空断言!!，这里一定不能为null。
+                ResourcesLoader::class.java.getResource("/build-in-voice-chinese/manifest.json")!!.readText()
             }
 
         /***
          * https://github.com/FasterXML/jackson-module-kotlin#usage
          */
-        val mapper = JsonMapper.builder().addModule(KotlinModule(nullIsSameAsDefault = true)).build()
+        // Constructor KotlinModule is deprecated, use KotlinModule.Builder instead
+        val mapper = JsonMapper.builder().addModule(
+            KotlinModule.Builder()
+                .withReflectionCacheSize(512)
+                .configure(KotlinFeature.NullToEmptyCollection, false)
+                .configure(KotlinFeature.NullToEmptyMap, false)
+                .configure(KotlinFeature.NullIsSameAsDefault, enabled = true)
+                .configure(KotlinFeature.SingletonSupport, false)
+                .configure(KotlinFeature.StrictNullChecks, false)
+                .build()
+        ).build()
 
         mapper.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
         // Jackson 忽略未知属性，这样即使将来有其他未知字段也不会导致解析失败
@@ -56,16 +69,15 @@ class ResourcesLoader : StartupActivity {
         val manifest: Manifest = mapper.readValue(current)
 
         val contributes: List<Contribute> =
-            if (manifest.contributes != null) {
-                manifest.contributes
-            } else if (customVoicePackage != "") {
-                val contText = resolvePath(customVoicePackage + File.separator + "contributes.json").readText()
-                mapper.readValue<Contributes>(contText).contributes
-            } else {
-                val contText =
-                    ResourcesLoader::class.java.getResource("/build-in-voice-chinese/contributes.json").readText()
-                mapper.readValue<Contributes>(contText).contributes
-            }
+            manifest.contributes
+                ?: if (customVoicePackage != "") {
+                    val contText = resolvePath(customVoicePackage + File.separator + "contributes.json").readText()
+                    mapper.readValue<Contributes>(contText).contributes
+                } else {
+                    val contText =
+                        ResourcesLoader::class.java.getResource("/build-in-voice-chinese/contributes.json")!!.readText()
+                    mapper.readValue<Contributes>(contText).contributes
+                }
 
         contributes.forEach {
             it.keywords.forEach { keyword ->
@@ -162,7 +174,7 @@ object BuildInContributes {
 
     val buildInContributesSeq: Sequence<Map.Entry<String, List<String>>> by lazy { buildInContributes.asSequence() }
 
-    val oneHour = Duration.ofMinutes(60)
-    val halfHour = Duration.ofMinutes(30)
-    val cron = CronScheduler.create(oneHour)
+    val oneHour: Duration = Duration.ofMinutes(60)
+    val halfHour: Duration = Duration.ofMinutes(30)
+    val cron: CronScheduler = CronScheduler.create(oneHour)
 }

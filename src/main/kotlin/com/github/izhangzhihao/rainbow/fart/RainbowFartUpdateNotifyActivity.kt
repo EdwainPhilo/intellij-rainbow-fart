@@ -9,11 +9,11 @@ import com.intellij.notification.NotificationListener
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.startup.StartupActivity
+import com.intellij.openapi.startup.ProjectActivity
 
-class RainbowFartUpdateNotifyActivity : StartupActivity {
+class RainbowFartUpdateNotifyActivity : ProjectActivity {
 
-    override fun runActivity(project: Project) {
+    override suspend fun execute(project: Project) {
         removeIfInstalled()
         val settings = RainbowFartSettings.instance
         if (getPlugin()?.version != settings.version) {
@@ -34,49 +34,33 @@ class RainbowFartUpdateNotifyActivity : StartupActivity {
     }
 
     companion object {
-        private const val pluginId = "izhangzhihao.rainbow.fart"
+        private const val PLUGIN_ID = "izhangzhihao.rainbow.fart"
+        private var isNotified = false
+        private val updateContent = """
+            <br/>欢迎使用 Rainbow Fart！
+            <br/>如果您觉得这个插件很有趣，请给我们<a href="https://github.com/izhangzhihao/intellij-rainbow-fart">一个Star</a>，您的支持是我们最大的动力！
+            <br/>
+            <br/>Welcome to Rainbow Fart!
+            <br/>If you find this plugin interesting, please <a href="https://github.com/izhangzhihao/intellij-rainbow-fart">give us a star</a>. Your support is our biggest motivation!
+        """.trimIndent()
 
-
-        private val updateContent: String by lazy {
-            //language=HTML
-            """
-    <br/>
-    🌈Thank you for downloading <b><a href="https://github.com/izhangzhihao/intellij-rainbow-fart">Rainbow Fart</a></b>!<br>
-    👍If you find this plugin helpful, <b><a href="https://github.com/izhangzhihao/intellij-rainbow-fart#%E6%94%AF%E6%8C%81%E6%88%91">please support us!</a>.</b><br>
-    🐛If you run into any problem, <b><a href="https://github.com/izhangzhihao/intellij-rainbow-fart/issues">feel free to raise a issue</a>.</b><br>
-    🆕See <b><a href="${changelog()}">changelog</a></b> for more details about this update.<br>
-    👉Other additional features under
-    <b>Settings > Other Settings > Rainbow Fart</b><br/>
-    """
-        }
-
-        private fun changelog(): String {
-            val plugin = getPlugin()
-            return if (plugin == null) {
-                """https://github.com/izhangzhihao/intellij-rainbow-fart/releases"""
-            } else {
-                """https://github.com/izhangzhihao/intellij-rainbow-fart/releases/tag/${plugin.version}"""
-            }
-
-        }
-
-        fun getPlugin(): IdeaPluginDescriptor? = PluginManagerCore.getPlugin(PluginId.getId(pluginId))
+        fun getPlugin(): IdeaPluginDescriptor? = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))
 
         private fun updateMsg(): String {
             val plugin = getPlugin()
-            return if (plugin == null) {
-                "Rainbow Fart installed."
+            return if (plugin != null) {
+                "Rainbow Fart ${plugin.version}"
             } else {
-                "Rainbow Fart updated to ${plugin.version}"
+                "Rainbow Fart"
             }
         }
 
         private fun showUpdate(project: Project) {
             val notification = createNotification(
-                    updateMsg(),
-                    updateContent,
-                    NotificationType.INFORMATION,
-                    NotificationListener.UrlOpeningListener(false)
+                updateMsg(),
+                updateContent,
+                NotificationType.INFORMATION,
+                NotificationListener.UrlOpeningListener(false)
             )
             showFullNotification(project, notification)
         }

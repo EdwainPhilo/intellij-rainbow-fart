@@ -9,11 +9,15 @@ import com.intellij.ui.BalloonLayoutData
 import com.intellij.ui.awt.RelativePoint
 import java.awt.Point
 
-fun createNotification(title: String, content: String,
-                       type: NotificationType, listener: NotificationListener): Notification {
+@Suppress("DEPRECATION")
+fun createNotification(
+    title: String, content: String,
+    type: NotificationType, listener: NotificationListener
+): Notification {
     return NotificationGroupManager.getInstance().getNotificationGroup("Rainbow Farts Notification Group")
-    .createNotification(title, content, type).setListener(listener)
+        .createNotification(title, content, type).setListener(listener)
 }
+
 
 fun showFullNotification(project: Project, notification: Notification) {
     val frame = WindowManager.getInstance().getIdeFrame(project)
@@ -25,12 +29,14 @@ fun showFullNotification(project: Project, notification: Notification) {
     val target = RelativePoint(frame.component, Point(bounds.x + bounds.width, 20))
 
     try {
-        val balloon = NotificationsManagerImpl.createBalloon(frame,
-                notification,
-                true, // showCallout
-                false, // hideOnClickOutside
-                BalloonLayoutData.fullContent(),
-                project)
+        val balloon = NotificationsManagerImpl.createBalloon(
+            frame,
+            notification,
+            true, // showCallout
+            false, // hideOnClickOutside
+            BalloonLayoutData.fullContent(),
+            project
+        )
         balloon.show(target, Balloon.Position.atLeft)
     } catch (e: Exception) {
         notification.notify(project)

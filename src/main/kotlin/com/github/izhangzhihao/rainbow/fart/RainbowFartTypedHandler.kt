@@ -14,6 +14,7 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.util.elementType
 import javazoom.jl.player.Player
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -25,7 +26,7 @@ import javax.sound.sampled.DataLine
 class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedActionHandlerBase(originalHandler) {
 
     private var candidates: MutableList<Char> = mutableListOf()
-
+    private var defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
     override fun execute(editor: Editor, charTyped: Char, dataContext: DataContext) {
         try {
             if (!RainbowFartSettings.instance.isRainbowFartEnabled) {
@@ -50,7 +51,7 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
                 .firstOrNull { (keyword, _) ->
                     str.contains(keyword, true)
                 }?.let { (_, voices) ->
-                    GlobalScope.launch(Dispatchers.Default) {
+                    GlobalScope.launch(defaultDispatcher) {
                         releaseFart(voices)
                     }
                     candidates.clear()
@@ -63,6 +64,7 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
             try {
                 this.myOriginalHandler?.execute(editor, charTyped, dataContext)
             } catch (e: Throwable) {
+                e.printStackTrace()
             }
         }
     }
@@ -83,13 +85,8 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
             try {
                 val voiceFile = voices.random()
                 // 使用try-catch处理可能的API不兼容问题
-                val fileExtension = try {
-                    // 尝试使用Kotlin 1.5+的API
-                    voiceFile.substringAfterLast('.', "").lowercase()
-                } catch (e: NoSuchMethodError) {
-                    // 回退到Kotlin 1.4的API
-                    voiceFile.substringAfterLast('.', "").toLowerCase()
-                }
+                val fileExtension = voiceFile.substringAfterLast('.', "").lowercase()
+
 
                 // 添加wav和其他音频格式支持，如果Java Sound API不支持，则回退到MP3播放尝试
                 when (fileExtension) {
