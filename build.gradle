@@ -16,6 +16,7 @@ plugins {
     id "org.jetbrains.kotlin.jvm" version "2.1.0"
     id "com.adarshr.test-logger" version "4.0.0"
     id "de.undercouch.download" version "5.5.0"
+    id "org.openjfx.javafxplugin" version "0.1.0"
 }
 
 testlogger {
@@ -69,6 +70,10 @@ idea {
     }
 }
 
+javafx {
+    version = "22"
+    modules = ['javafx.controls', 'javafx.media', 'javafx.swing']
+}
 dependencies {
     implementation('io.timeandspace:cron-scheduler:0.1')
     implementation('javazoom:jlayer:1.0.1')

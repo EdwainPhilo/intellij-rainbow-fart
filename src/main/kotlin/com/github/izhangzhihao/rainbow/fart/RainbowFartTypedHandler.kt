@@ -14,19 +14,19 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.util.elementType
 import javazoom.jl.player.Player
-import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.sound.sampled.AudioSystem
-import javax.sound.sampled.Clip
-import javax.sound.sampled.DataLine
+import javax.sound.sampled.LineEvent
 
 class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedActionHandlerBase(originalHandler) {
 
     private var candidates: MutableList<Char> = mutableListOf()
-    private var defaultDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     override fun execute(editor: Editor, charTyped: Char, dataContext: DataContext) {
         try {
             if (!RainbowFartSettings.instance.isRainbowFartEnabled) {
@@ -35,7 +35,6 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
             val project = editor.project
 
             if (project != null) {
-                //val language = PsiUtilBase.getLanguageInEditor(editor, project)
                 val virtualFile = FileDocumentManager.getInstance().getFile(editor.document)
                 if (virtualFile != null) {
                     val file = PsiManager.getInstance(project).findFile(virtualFile)
@@ -45,13 +44,37 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
                 }
             }
 
+            // 获取当前光标位置的前一个字符
+            val offset = editor.caretModel.offset
+            val document = editor.document
+            val text = document.text
+
             candidates.add(charTyped)
             val str = candidates.joinToString("")
+
+
+            // 如果当前输入的内容不在实际文本中，说明是删除操作
+            if (!text.contains(str)) {
+                candidates.clear()
+
+                // 获取当前行的开始位置
+                val lineNumber = document.getLineNumber(offset)
+                val lineStartOffset = document.getLineStartOffset(lineNumber)
+
+                // 从当前位置向前最多读取20个字符，但不超过行首
+                val start = maxOf(lineStartOffset, offset - 20)
+                val currentText = text.substring(start, offset)
+                    .replace("\n", "") // 移除可能的换行符
+                    .replace("\r", "") // 移除可能的回车符
+
+                candidates.addAll(currentText.toList())
+            }
+
             BuildInContributes.buildInContributesSeq
                 .firstOrNull { (keyword, _) ->
                     str.contains(keyword, true)
                 }?.let { (_, voices) ->
-                    GlobalScope.launch(defaultDispatcher) {
+                    scope.launch {
                         releaseFart(voices)
                     }
                     candidates.clear()
@@ -60,7 +83,6 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
                 candidates = candidates.subList(10, candidates.size - 1)
             }
         } finally {
-            // Ensure original handler is called no matter what errors are thrown, to prevent typing from being lost.
             try {
                 this.myOriginalHandler?.execute(editor, charTyped, dataContext)
             } catch (e: Throwable) {
@@ -70,104 +92,110 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
     }
 
     object FartTypedHandler {
-
+        @Volatile
         private var playing = false
+        private val playLock = Object()
+        private var currentClip: javax.sound.sampled.Clip? = null
+        private var currentPlayer: Player? = null
 
         fun releaseFart(voices: List<String>) {
-            if (RainbowFartSettings.instance.isRainbowFartEnabled && !playing) {
-                playing = true
-                playVoice(voices)
-                playing = false
+            if (!RainbowFartSettings.instance.isRainbowFartEnabled || playing) {
+                return
             }
+
+            synchronized(playLock) {
+                if (playing) return
+                playing = true
+                try {
+                    // 确保之前的音频停止
+                    stopCurrentAudio()
+                    playVoice(voices)
+                } finally {
+                    playing = false
+                }
+            }
+        }
+
+        private fun stopCurrentAudio() {
+            currentClip?.apply {
+                stop()
+                close()
+            }
+            currentClip = null
+
+            currentPlayer?.close()
+            currentPlayer = null
         }
 
         private fun playVoice(voices: List<String>) {
             try {
                 val voiceFile = voices.random()
-                // 使用try-catch处理可能的API不兼容问题
                 val fileExtension = voiceFile.substringAfterLast('.', "").lowercase()
 
-
-                // 添加wav和其他音频格式支持，如果Java Sound API不支持，则回退到MP3播放尝试
                 when (fileExtension) {
                     "mp3" -> playMP3(voiceFile)
                     "wav" -> playWAV(voiceFile)
-                    else -> {
-                        // 尝试使用Java Sound API播放其他格式
-                        playWithJavaSound(voiceFile)
-                    }
+                    else -> playMP3(voiceFile)
                 }
             } catch (e: Throwable) {
-                // 记录错误但不中断用户体验
                 e.printStackTrace()
+                playing = false
             }
         }
 
         private fun playMP3(voiceFile: String) {
-            val mp3Stream =
-                if (RainbowFartSettings.instance.customVoicePackage != "") {
-                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile).inputStream()
+            try {
+                val mp3Stream = if (RainbowFartSettings.instance.customVoicePackage != "") {
+                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
+                        .inputStream()
                 } else {
                     FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
-                }
-            val player = Player(mp3Stream)
-            player.play()
-            player.close()
+                } ?: return
+
+                currentPlayer = Player(mp3Stream)
+                currentPlayer?.play()
+                currentPlayer?.close()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         private fun playWAV(voiceFile: String) {
-            val audioInputStream = if (RainbowFartSettings.instance.customVoicePackage != "") {
-                AudioSystem.getAudioInputStream(
-                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
-                )
-            } else {
-                AudioSystem.getAudioInputStream(
-                    FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
-                )
-            }
-
-            val clip = AudioSystem.getClip()
-            clip.open(audioInputStream)
-            clip.start()
-
-            // 等待播放完成
-            while (clip.isRunning) {
-                Thread.sleep(10)
-            }
-            clip.close()
-            audioInputStream.close()
-        }
-
-        private fun playWithJavaSound(voiceFile: String) {
             try {
-                val audioInputStream = if (RainbowFartSettings.instance.customVoicePackage != "") {
-                    AudioSystem.getAudioInputStream(
-                        resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
-                    )
+                val audioFile = if (RainbowFartSettings.instance.customVoicePackage != "") {
+                    resolvePath(RainbowFartSettings.instance.customVoicePackage + File.separator + voiceFile)
                 } else {
-                    AudioSystem.getAudioInputStream(
-                        FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
-                    )
+                    val tempFile = File.createTempFile("temp", ".wav")
+                    tempFile.deleteOnExit()
+                    FartTypedHandler::class.java.getResourceAsStream("/build-in-voice-chinese/$voiceFile")
+                        ?.use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    tempFile
                 }
 
-                val format = audioInputStream.format
-                val info = DataLine.Info(Clip::class.java, format)
+                val clip = AudioSystem.getClip()
+                currentClip = clip
+                val audioInputStream = AudioSystem.getAudioInputStream(audioFile)
+                clip.open(audioInputStream)
 
-                if (AudioSystem.isLineSupported(info)) {
-                    val clip = AudioSystem.getLine(info) as Clip
-                    clip.open(audioInputStream)
-                    clip.start()
-
-                    // 等待播放完成
-                    while (clip.isRunning) {
-                        Thread.sleep(10)
+                clip.addLineListener { event ->
+                    if (event.type == LineEvent.Type.STOP) {
+                        playing = false
+                        clip.close()
+                        audioInputStream.close()
                     }
-                    clip.close()
                 }
-                audioInputStream.close()
+
+                clip.start()
+                // 等待播放完成
+                while (clip.isRunning) {
+                    Thread.sleep(10)
+                }
             } catch (e: Exception) {
-                // 如果Java Sound API不支持，回退到MP3播放尝试
-                playMP3(voiceFile)
+                e.printStackTrace()
             }
         }
 
@@ -185,11 +213,6 @@ class RainbowFartTypedHandler(originalHandler: TypedActionHandler) : TypedAction
             }
 
             return element.elementType.toString().contains("comment", true)
-//            if (element == null) {
-//                return false
-//            }
-//            val node: ASTNode? = element.node
-//            return node != null //&& JavaDocTokenType.ALL_JAVADOC_TOKENS.contains(node.getElementType())
         }
     }
 }

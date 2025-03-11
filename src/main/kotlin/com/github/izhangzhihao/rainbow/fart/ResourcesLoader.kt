@@ -14,7 +14,9 @@ import com.github.izhangzhihao.rainbow.fart.settings.RainbowFartSettings
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
 import io.timeandspace.cronscheduler.CronScheduler
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.Duration
@@ -23,14 +25,14 @@ import java.time.ZoneId
 
 
 class ResourcesLoader : StartupActivity {
-
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     override fun runActivity(project: Project) {
         if (RainbowFartSettings.isAppliedApplicationLevel) {
             return
         } else {
             RainbowFartSettings.isAppliedApplicationLevel = true
         }
-        
+
         val customVoicePackage = RainbowFartSettings.instance.customVoicePackage
         val current =
             if (customVoicePackage != "") {
@@ -38,19 +40,12 @@ class ResourcesLoader : StartupActivity {
                 if (manifestFile.exists()) {
                     resolvePath(customVoicePackage + File.separator + "manifest.json").readText()
                 } else {
-                    // 如果没有manifest.json文件，尝试加载contributes.json
-                    // 这里不做文件是否存在判断，让插件报错从而让用户知道自定义语音包不成功
                     resolvePath(customVoicePackage + File.separator + "contributes.json").readText()
                 }
             } else {
-                // 添加非空断言!!，这里一定不能为null。
                 ResourcesLoader::class.java.getResource("/build-in-voice-chinese/manifest.json")!!.readText()
             }
 
-        /***
-         * https://github.com/FasterXML/jackson-module-kotlin#usage
-         */
-        // Constructor KotlinModule is deprecated, use KotlinModule.Builder instead
         val mapper = JsonMapper.builder().addModule(
             KotlinModule.Builder()
                 .withReflectionCacheSize(512)
@@ -63,7 +58,6 @@ class ResourcesLoader : StartupActivity {
         ).build()
 
         mapper.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
-        // Jackson 忽略未知属性，这样即使将来有其他未知字段也不会导致解析失败
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
         val manifest: Manifest = mapper.readValue(current)
@@ -88,7 +82,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(oneHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -98,7 +92,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(oneHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -108,7 +102,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(oneHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -118,7 +112,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(halfHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -128,7 +122,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(halfHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -138,7 +132,7 @@ class ResourcesLoader : StartupActivity {
                                 RainbowFartTypedHandler.FartTypedHandler.releaseFart(it.voices)
                             }
                         }
-                        GlobalScope.launch { timeGuard(0) }
+                        scope.launch { timeGuard(0) }
                         cron.scheduleAtRoundTimesInDaySkippingToLatest(oneHour, ZoneId.systemDefault(), timeGuard)
                     }
 
@@ -164,6 +158,7 @@ data class Manifest(
     val locale: String = "zh",
     val contributes: List<Contribute>?
 )
+
 // 添加支持 texts 字段
 data class Contribute(val keywords: List<String>, val voices: List<String>, val texts: List<String> = emptyList())
 
